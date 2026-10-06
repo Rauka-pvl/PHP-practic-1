@@ -1,0 +1,19 @@
+{
+  "P01-GET": {
+    "file": "app.php",
+    "description": "Прочитать два количества из GET и проверить готовой quantity()."
+  },
+  "P01-POST": {
+    "file": "app.php",
+    "description": "Прочитать количества из POST, а не из строки запроса."
+  },
+  "P01-SUM": {
+    "file": "app.php",
+    "description": "Вычислить сумму в минимальных денежных единицах."
+  },
+  "P01-HEADER": {
+    "file": "app.php",
+    "description": "Установить X-Practice: 01 до вывода тела.",
+    "stub": "return;"
+  }
+}

@@ -1,59 +1,40 @@
 <?php
-
 declare(strict_types=1);
-
-require_once __DIR__ . '/../app.php';
-
-$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
-$path = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
-if ($path === '/index.php') {
-    $path = '/';
-}
-
-$routes = [
-    '/' => ['GET', 'HEAD'],
-    '/quote' => ['GET', 'HEAD'],
-    '/preview' => ['POST'],
-];
-
+require dirname(__DIR__) . '/app.php';
+$path = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH) ?: '/';
+$method = $_SERVER['REQUEST_METHOD'];
 try {
-    if (!isset($routes[$path])) {
-        throw new HttpError(404, 'Страница не найдена: ' . $path);
+    if (!in_array($path, ['/', '/quote', '/preview'], true)) {
+        http_response_code(404);
+        page('Ресурс не найден', '<a href="/">К формам</a>');
+    } elseif (!in_array($method, $path === '/preview' ? ['POST'] : ['GET', 'HEAD'], true)) {
+        http_response_code(405);
+        header('Allow: ' . ($path === '/preview' ? 'POST' : 'GET, HEAD'));
+        page('Метод не разрешён', '<a href="/">К формам</a>');
+    } elseif ($path === '/') {
+        $prices = prices();
+        $body = '<p>PHP ' . PHP_VERSION . '; время UTC ' . gmdate('H:i:s') . '</p>';
+        $body .= '<p>' . h($prices[0]) . ': ' . $prices[1] . '; ' . h($prices[2]) . ': ' . $prices[3] . ' минимальных единиц.</p>';
+        foreach (['/quote' => 'get', '/preview' => 'post'] as $action => $formMethod) {
+            $body .= '<form action="' . $action . '" method="' . $formMethod . '">';
+            $body .= '<h2>' . strtoupper($formMethod) . '</h2>';
+            $body .= '<label>Первое количество<input name="qty_first" type="number" min="0" max="99" value="2" required></label>';
+            $body .= '<label>Второе количество<input name="qty_second" type="number" min="0" max="99" value="1" required></label>';
+            $body .= '<button>Рассчитать</button></form>';
+        }
+        page('Расчёт по HTTP-запросу', $body);
+    } else {
+        [$first, $second] = $path === '/quote' ? getQuantities($_GET) : postQuantities($_POST);
+        $total = totalMinor($first, $second);
+        page('Результат расчёта', '<p>Сумма: <strong>' . number_format($total / 100, 2, '.', '')
+            . '</strong>; минимальные единицы: ' . $total . '</p><p>Расчёт выполнен, данные не сохранены.</p><a href="/">К формам</a>');
     }
-
-    if (!in_array($method, $routes[$path], true)) {
-        $allow = implode(', ', $routes[$path]);
-        throw new HttpError(405, "Метод {$method} не разрешён для {$path}. Разрешено: {$allow}.", ['Allow' => $allow]);
-    }
-
-    switch ($path) {
-        case '/':
-            page(200, 'Расчёт стоимости', formsBlock());
-            break;
-
-        case '/quote':
-            [$first, $second] = getQuantities($_GET);
-            $total = totalMinor($first, $second);
-            page(200, 'Результат расчёта', resultBlock($first, $second, $total));
-            break;
-
-        case '/preview':
-            [$first, $second] = postQuantities($_POST);
-            $total = totalMinor($first, $second);
-            $note = '    <p class="note">Это только предпросмотр: заказ не сохраняется и никуда не отправляется.</p>';
-            page(200, 'Предпросмотр заказа', resultBlock($first, $second, $total) . "\n" . $note);
-            break;
-    }
-} catch (HttpError $error) {
-    page(
-        $error->status,
-        'Ошибка ' . $error->status,
-        '    <p class="error">' . e($error->getMessage()) . '</p>',
-        $error->headers,
-    );
-} catch (TodoError $todo) {
-    page(501, 'Не реализовано', '    <p class="error">Не выполнен TODO: ' . e($todo->getMessage()) . '</p>');
-} catch (Throwable $exception) {
-    error_log((string) $exception);
-    page(500, 'Внутренняя ошибка', '    <p class="error">Внутренняя ошибка сервера.</p>');
+} catch (InvalidArgumentException $error) {
+    http_response_code(400);
+    page('Ошибка данных', '<p>' . h($error->getMessage()) . '</p>');
+} catch (Throwable $error) {
+    $pending = str_starts_with($error->getMessage(), 'TODO ');
+    http_response_code($pending ? 501 : 500);
+    page('Операция не выполнена', '<p>' . h($pending ? $error->getMessage() : 'Проверьте журнал PHP') . '</p>');
+    if (!$pending) error_log((string) $error);
 }
